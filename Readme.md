@@ -1,5 +1,6 @@
 # MongoDB Partial Export
 
+## Intro
 This tool can be used to dump part of a mongodb database by following a scheme defined in a yaml file. Let's take a simple version of Github data model. You want to dump all repositories of a given account, and all data recursively associated with every repo. 
 
 ```yaml
@@ -17,8 +18,8 @@ This tool can be used to dump part of a mongodb database by following a scheme d
   dependency: repos
   foreign_key: repo_id
 ```
-
-
+## How to 
+You can use this tool by running the following command :
 ```shell
 SOURCE_DB=db1 DEST_DB=db2 go run main.go data/schema.yml
 ```
