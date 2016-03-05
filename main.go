@@ -18,6 +18,32 @@ type collectionDescription struct {
 	Filters    bson.M
 }
 
+func correctFilters(filters bson.M) bson.M {
+	if reflect.TypeOf(filters["_id"]) == reflect.TypeOf("") {
+		newId := bson.ObjectIdHex(filters["_id"].(string))
+		filters["_id"] = newId
+	}
+	return filters
+}
+
+func extractAndInsertDocuments(objectIds []bson.ObjectId, collectionDescription *collectionDescription, sourceCollection *mgo.Collection, destDb *mgo.Database) {
+	criteria := bson.M{}
+	if objectIds != nil && len(collectionDescription.ForeignKey) > 0 {
+		criteria = bson.M{collectionDescription.ForeignKey: bson.M{"$in": objectIds}}
+	}
+
+	for key, value := range collectionDescription.Filters {
+		criteria[key] = value
+	}
+
+	obj := bson.M{}
+	criteria = correctFilters(criteria)
+	iter := sourceCollection.Find(criteria).Iter()
+	for iter.Next(&obj) {
+		destDb.C(collectionDescription.Collection).Insert(obj)
+	}
+}
+
 func extractData(description *collectionDescription, dependentCollection *collectionDescription, sourceDb *mgo.Database, destDb *mgo.Database) {
 
 	sourceCol := sourceDb.C(description.Collection)
@@ -27,42 +53,24 @@ func extractData(description *collectionDescription, dependentCollection *collec
 		iterDepCol := depCol.Find(bson.M{}).Iter()
 		batchSize := 50
 		obj := bson.M{}
-		objects := []bson.ObjectId{}
+		objectIds := []bson.ObjectId{}
 		for iterDepCol.Next(&obj) {
-			objects = append(objects, obj["_id"].(bson.ObjectId))
-			if len(objects) >= batchSize {
-				//TODO merge with existing filters
-				iter := sourceCol.Find(bson.M{description.ForeignKey: bson.M{"$in": objects}}).Iter()
-				for iter.Next(&obj) {
-					destDb.C(description.Collection).Insert(obj)
-				}
-				objects = []bson.ObjectId{}
+			objectIds = append(objectIds, obj["_id"].(bson.ObjectId))
+			if len(objectIds) >= batchSize {
+				extractAndInsertDocuments(objectIds, description, sourceCol, destDb)
+				objectIds = []bson.ObjectId{}
 			}
 		}
 
-		//TODO refactor this
-		if len(objects) > 0 {
-			iter := sourceCol.Find(bson.M{description.ForeignKey: bson.M{"$in": objects}}).Iter()
-			for iter.Next(&obj) {
-				destDb.C(description.Collection).Insert(obj)
-			}
-			objects = []bson.ObjectId{}
+		if len(objectIds) > 0 {
+			extractAndInsertDocuments(objectIds, description, sourceCol, destDb)
+			objectIds = []bson.ObjectId{}
 		}
 
 	} else {
-		fmt.Printf("%#i \n", description.Filters)
-		if reflect.TypeOf(description.Filters["_id"]) == reflect.TypeOf("") {
-			newId := bson.ObjectIdHex(description.Filters["_id"].(string))
-			description.Filters["_id"] = newId
-		}
-		count, _ := sourceCol.Find(description.Filters).Count()
-		fmt.Printf("%d \n\n\n", count)
-		result := bson.M{}
-		iter := sourceCol.Find(description.Filters).Iter()
-		for iter.Next(&result) {
-			destDb.C(description.Collection).Insert(result)
-		}
 		fmt.Printf("Extracting data from collection %s\n", description.Collection)
+		extractAndInsertDocuments(nil, description, sourceCol, destDb)
+
 	}
 
 }
