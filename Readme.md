@@ -30,9 +30,8 @@ SOURCE_DB=db1 DEST_DB=db2 go run main.go data/schema.yml
 
 This tools dumps every collection by waiting for its dependency collection to be first dumped. It is then dumped using all object ids of the dependent collection as the foreign key of your collection.
 
-This cannot work with any data model, because this assumes data are hierarchical. If you have a user collection it will probably not be exported. You can export it with another schema or by making a full dump. 
+This won't work with all data models, because it assumes data are hierarchical. If you have a user collection it will probably not be exported. You can export it with another schema or by making a full dump. 
 
 ## Next steps 
 
-- Handle database authentication 
 - Add unit tests
