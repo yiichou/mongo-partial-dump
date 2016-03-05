@@ -1,7 +1,7 @@
 # MongoDB Partial Export
 
 ## Intro
-This tool can be used to dump part of a mongodb database by following a scheme defined in a yaml file. Let's take a simple version of Github data model. You want to dump all repositories of a given account, and all data recursively associated with every repo. 
+This tool can be used to dump part of a MongoDB database by following a scheme defined in a yaml file. Let's take a simple version of Github data model. You want to dump all repositories of a given account, and all data recursively associated with every repo. 
 
 ```yaml
 # ./data/schema.yml
@@ -34,6 +34,5 @@ This cannot work with any data model, because this assumes data are hierarchical
 
 ## Next steps 
 
-- Handle databases URL using env variables 
 - Handle database authentication 
 - Add unit tests

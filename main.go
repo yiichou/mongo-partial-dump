@@ -6,6 +6,7 @@ import (
 	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
+	"net/url"
 	"os"
 	"reflect"
 )
@@ -66,16 +67,34 @@ func extractData(description *collectionDescription, dependentCollection *collec
 
 }
 
+func createDBConnection(uri *url.URL) (session *mgo.Session, db *mgo.Database) {
+	session, _ = mgo.Dial(uri.Host)
+	db = session.DB(uri.Path[1:])
+	if uri.User != nil {
+		password, _ := uri.User.Password()
+		username := uri.User.Username()
+		if len(username) > 0 && len(password) > 0 {
+			db.Login(username, password)
+		}
+	}
+
+	return
+}
+
 func main() {
 
-	//TODO: use environment variables
-	sourceCon, _ := mgo.Dial("127.0.0.1:27017")
-	destCon, _ := mgo.Dial("127.0.0.1:27017")
+	sourceURI, err1 := url.Parse(os.Getenv("SOURCE_URI"))
+	destURI, err2 := url.Parse(os.Getenv("DESTINATION_URI"))
+
+	if err1 != nil || err2 != nil || sourceURI.Host == "" || destURI.Host == "" {
+		panic("You must define both SOURCE_URI and DESTINATION_URI env variables according to MongoDB connection string URI format. See https://docs.mongodb.org/master/reference/connection-string/")
+	}
+
+	sourceCon, db1 := createDBConnection(sourceURI)
+	destCon, db2 := createDBConnection(destURI)
+
 	defer sourceCon.Close()
 	defer destCon.Close()
-
-	db1 := sourceCon.DB(os.Getenv("SOURCE_DB"))
-	db2 := destCon.DB(os.Getenv("DEST_DB"))
 
 	bytes, err := ioutil.ReadFile(os.Args[1])
 	if err != nil {
