@@ -26,6 +26,12 @@ SOURCE_DB=db1 DEST_DB=db2 go run main.go data/schema.yml
 
 `db1` is the database you want to partially dump, and `db2` is the destination database. 
 
+## Internals
+
+This tools dumps every collection by waiting for its dependency collection to be first dumped. It is then dumped using all object ids of the dependent collection as the foreign key of your collection.
+
+This cannot work with any data model, because this assumes data are hierarchical. If you have a user collection it will probably not be exported. You can export it with another schema or by making a full dump. 
+
 ## Next steps 
 
 - Handle databases URL using env variables 
