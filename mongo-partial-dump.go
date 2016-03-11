@@ -44,9 +44,17 @@ func extractAndInsertDocuments(objectIds []bson.ObjectId, collectionDescription 
 	}
 }
 
+func ensureEmptyCollection(collection *mgo.Collection) {
+	count, _ := collection.Find(nil).Count()
+	if count > 0 {
+		panic(fmt.Sprintf("Collection %s is not empty (%d objects) in destination database. Exiting to avoid corrupted data ", collection.Name, count))
+	}
+}
+
 func extractData(description *collectionDescription, dependentCollection *collectionDescription, sourceDb *mgo.Database, destDb *mgo.Database) {
 
 	sourceCol := sourceDb.C(description.Collection)
+	ensureEmptyCollection(destDb.C(description.Collection))
 	if dependentCollection != nil {
 		fmt.Printf("Extracting data from collection %s using key %s related to %s\n", description.Collection, description.ForeignKey, dependentCollection.Collection)
 		depCol := destDb.C(dependentCollection.Collection)
