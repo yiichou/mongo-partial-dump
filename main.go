@@ -41,6 +41,9 @@ func extractAndInsertDocuments(objectIds []bson.ObjectId, collectionDescription 
 
 	obj := bson.M{}
 	criteria = correctFilters(criteria)
+
+	destDb.C(collectionDescription.Collection).RemoveAll(criteria)
+
 	iter := sourceCollection.Find(criteria).Iter()
 	for iter.Next(&obj) {
 		destDb.C(collectionDescription.Collection).Insert(obj)
