@@ -1,7 +1,7 @@
 # MongoDB Partial Export
 
 ## Intro
-This tool can be used to dump part of a MongoDB database by following a scheme defined in a yaml file. Let's take a simple version of Github data model. You want to dump all repositories of a given account, and all data recursively associated with every repo. 
+This tool can be used to dump part of a MongoDB database by following a scheme defined in a yaml file. Let's take a simple version of Github data model. You want to dump all repositories of a given account, and all data recursively associated with every repo.
 
 ```yaml
 # ./data/schema.yml
@@ -11,27 +11,33 @@ This tool can be used to dump part of a MongoDB database by following a scheme d
 - collection: repos
   dependency: accounts
   foreign_key: account_id
-  filters: 
+  filters:
     k1: v1
     k2: v2
 - collection: commits
   dependency: repos
   foreign_key: repo_id
 ```
-## How to 
+## How to
 You can use this tool by running the following command :
 ```shell
 SOURCE_DB=db1 DEST_DB=db2 go run main.go data/schema.yml
 ```
 
-`db1` is the database you want to partially dump, and `db2` is the destination database. 
+`db1` is the database you want to partially dump, and `db2` is the destination database.
 
 ## Internals
 
 This tools dumps every collection by waiting for its dependency collection to be first dumped. It is then dumped using all object ids of the dependent collection as the foreign key of your collection.
 
-This won't work with all data models, because it assumes data are hierarchical. If you have a user collection it will probably not be exported. You can export it with another schema or by making a full dump. 
+This won't work with all data models, because it assumes data are hierarchical. If you have a user collection it will probably not be exported. You can export it with another schema or by making a full dump.
 
-## Next steps 
+## Next steps
 
 - Add unit tests
+
+
+
+
+SOURCE_URI=mongodb://localhost:27017/goldendata_development DESTINATION_URI=mongodb://localhost:27017/goldendata_test go run main.go schema.yml
+

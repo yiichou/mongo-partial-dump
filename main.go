@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"net/url"
 	"os"
 	"reflect"
+
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
+	"gopkg.in/yaml.v2"
 )
 
 type collectionDescription struct {
@@ -19,9 +20,11 @@ type collectionDescription struct {
 }
 
 func correctFilters(filters bson.M) bson.M {
-	if reflect.TypeOf(filters["_id"]) == reflect.TypeOf("") {
-		newId := bson.ObjectIdHex(filters["_id"].(string))
-		filters["_id"] = newId
+	for _, key := range [...]string{"_id", "creator_id"} {
+		if reflect.TypeOf(filters[key]) == reflect.TypeOf("") {
+			newId := bson.ObjectIdHex(filters[key].(string))
+			filters[key] = newId
+		}
 	}
 	return filters
 }
@@ -54,7 +57,7 @@ func ensureEmptyCollection(collection *mgo.Collection) {
 func extractData(description *collectionDescription, dependentCollection *collectionDescription, sourceDb *mgo.Database, destDb *mgo.Database) {
 
 	sourceCol := sourceDb.C(description.Collection)
-	ensureEmptyCollection(destDb.C(description.Collection))
+	// ensureEmptyCollection(destDb.C(description.Collection))
 	if dependentCollection != nil {
 		fmt.Printf("Extracting data from collection %s using key %s related to %s\n", description.Collection, description.ForeignKey, dependentCollection.Collection)
 		depCol := destDb.C(dependentCollection.Collection)
@@ -130,10 +133,15 @@ func main() {
 		}
 
 		for {
+			if len(todo) == 0 {
+				doneCollectionCount += 1
+				break
+			}
+
 			var item *collectionDescription
-			//fmt.Printf("Size of todo %d\n", len(todo))
+			// fmt.Printf("Size of todo %d\n", len(todo))
 			item, todo = todo[0], todo[1:]
-			//fmt.Printf("Size of todo %d\n", len(todo))
+			// fmt.Printf("Size of todo %d\n", len(todo))
 			var dependencyCollection *collectionDescription
 			if len(item.Dependency) > 0 {
 				for _, other := range collections {
@@ -147,11 +155,14 @@ func main() {
 			extractData(item, dependencyCollection, db1, db2)
 			doneCollections[item.Collection] = true
 			doneCollectionCount += 1
+
 			if len(todo) == 0 {
 				break
 			}
 		}
 
+		fmt.Printf("doneCollectionCount %d\n", doneCollectionCount)
+		fmt.Printf("Size of collections %d\n", len(collections))
 		if doneCollectionCount == len(collections) {
 			break
 		}
