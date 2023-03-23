@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"strings"
 
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
@@ -19,11 +20,14 @@ type collectionDescription struct {
 	Filters    bson.M
 }
 
+var syncedDocumentIds = make(map[string][]bson.ObjectId)
+
 func correctFilters(filters bson.M) bson.M {
-	for _, key := range [...]string{"_id", "creator_id"} {
-		if reflect.TypeOf(filters[key]) == reflect.TypeOf("") {
-			newId := bson.ObjectIdHex(filters[key].(string))
-			filters[key] = newId
+	for key, value := range filters {
+		if strings.HasSuffix(key, "_id") && reflect.TypeOf(filters[key]) == reflect.TypeOf("") {
+			filters[key] = bson.ObjectIdHex(value.(string))
+		} else if reflect.ValueOf(value).Kind() == reflect.Slice {
+			filters[key] = bson.M{"$in": value}
 		}
 	}
 	return filters
@@ -41,20 +45,17 @@ func extractAndInsertDocuments(objectIds []bson.ObjectId, collectionDescription 
 
 	obj := bson.M{}
 	criteria = correctFilters(criteria)
+	fmt.Printf("Criteria %s\n", criteria)
 
 	destDb.C(collectionDescription.Collection).RemoveAll(criteria)
 
 	iter := sourceCollection.Find(criteria).Iter()
 	for iter.Next(&obj) {
 		destDb.C(collectionDescription.Collection).Insert(obj)
+		syncedDocumentIds[collectionDescription.Collection] = append(syncedDocumentIds[collectionDescription.Collection], obj["_id"].(bson.ObjectId))
+		fmt.Printf(".")
 	}
-}
-
-func ensureEmptyCollection(collection *mgo.Collection) {
-	count, _ := collection.Find(nil).Count()
-	if count > 0 {
-		panic(fmt.Sprintf("Collection %s is not empty (%d objects) in destination database. Exiting to avoid corrupted data ", collection.Name, count))
-	}
+	fmt.Printf("\n")
 }
 
 func extractData(description *collectionDescription, dependentCollection *collectionDescription, sourceDb *mgo.Database, destDb *mgo.Database) {
@@ -63,13 +64,10 @@ func extractData(description *collectionDescription, dependentCollection *collec
 	// ensureEmptyCollection(destDb.C(description.Collection))
 	if dependentCollection != nil {
 		fmt.Printf("Extracting data from collection %s using key %s related to %s\n", description.Collection, description.ForeignKey, dependentCollection.Collection)
-		depCol := destDb.C(dependentCollection.Collection)
-		iterDepCol := depCol.Find(bson.M{}).Iter()
-		batchSize := 50
-		obj := bson.M{}
+		batchSize := 500
 		objectIds := []bson.ObjectId{}
-		for iterDepCol.Next(&obj) {
-			objectIds = append(objectIds, obj["_id"].(bson.ObjectId))
+		for _, id := range syncedDocumentIds[dependentCollection.Collection] {
+			objectIds = append(objectIds, id)
 			if len(objectIds) >= batchSize {
 				extractAndInsertDocuments(objectIds, description, sourceCol, destDb)
 				objectIds = []bson.ObjectId{}
@@ -78,7 +76,6 @@ func extractData(description *collectionDescription, dependentCollection *collec
 
 		if len(objectIds) > 0 {
 			extractAndInsertDocuments(objectIds, description, sourceCol, destDb)
-			objectIds = []bson.ObjectId{}
 		}
 
 	} else {

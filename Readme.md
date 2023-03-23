@@ -21,7 +21,7 @@ This tool can be used to dump part of a MongoDB database by following a scheme d
 ## How to
 You can use this tool by running the following command :
 ```shell
-SOURCE_DB=db1 DEST_DB=db2 go run main.go data/schema.yml
+SOURCE_URI=db1 DESTINATION_URI=db2 go run main.go data/schema.yml
 ```
 
 `db1` is the database you want to partially dump, and `db2` is the destination database.
@@ -35,9 +35,3 @@ This won't work with all data models, because it assumes data are hierarchical. 
 ## Next steps
 
 - Add unit tests
-
-
-
-
-SOURCE_URI=mongodb://localhost:27017/goldendata_development DESTINATION_URI=mongodb://localhost:27017/goldendata_test go run main.go schema.yml
-
