@@ -14,10 +14,11 @@ import (
 )
 
 type collectionDescription struct {
-	Collection string
-	Dependency string
-	ForeignKey string `yaml:"foreign_key"`
-	Filters    bson.M
+	Collection   string
+	Dependency   string
+	ForeignKey   string `yaml:"foreign_key"`
+	ReferenceKey string `yaml:"reference_key"`
+	Filters      bson.M
 }
 
 var syncedDocumentIds = make(map[string][]bson.ObjectId)
@@ -33,25 +34,37 @@ func correctFilters(filters bson.M) bson.M {
 	return filters
 }
 
+func batchSlice(slice []bson.ObjectId, batchSize int) [][]bson.ObjectId {
+	var batches [][]bson.ObjectId
+	for batchSize < len(slice) {
+		slice, batches = slice[batchSize:], append(batches, slice[0:batchSize:batchSize])
+	}
+	batches = append(batches, slice)
+	return batches
+}
+
 func extractAndInsertDocuments(objectIds []bson.ObjectId, collectionDescription *collectionDescription, sourceCollection *mgo.Collection, destDb *mgo.Database) {
 	criteria := bson.M{}
 	if objectIds != nil && len(collectionDescription.ForeignKey) > 0 {
 		criteria = bson.M{collectionDescription.ForeignKey: bson.M{"$in": objectIds}}
 	}
-
+	if objectIds != nil && len(collectionDescription.ReferenceKey) > 0 {
+		criteria = bson.M{"_id": bson.M{"$in": objectIds}}
+	}
 	for key, value := range collectionDescription.Filters {
 		criteria[key] = value
 	}
 
-	obj := bson.M{}
 	criteria = correctFilters(criteria)
 	fmt.Printf("Criteria %s\n", criteria)
 
-	destDb.C(collectionDescription.Collection).RemoveAll(criteria)
+	destCollection := destDb.C(collectionDescription.Collection)
+	destCollection.RemoveAll(criteria)
 
+	obj := bson.M{}
 	iter := sourceCollection.Find(criteria).Iter()
 	for iter.Next(&obj) {
-		destDb.C(collectionDescription.Collection).Insert(obj)
+		destCollection.Insert(obj)
 		syncedDocumentIds[collectionDescription.Collection] = append(syncedDocumentIds[collectionDescription.Collection], obj["_id"].(bson.ObjectId))
 		fmt.Printf(".")
 	}
@@ -59,31 +72,31 @@ func extractAndInsertDocuments(objectIds []bson.ObjectId, collectionDescription 
 }
 
 func extractData(description *collectionDescription, dependentCollection *collectionDescription, sourceDb *mgo.Database, destDb *mgo.Database) {
-
 	sourceCol := sourceDb.C(description.Collection)
-	// ensureEmptyCollection(destDb.C(description.Collection))
-	if dependentCollection != nil {
-		fmt.Printf("Extracting data from collection %s using key %s related to %s\n", description.Collection, description.ForeignKey, dependentCollection.Collection)
-		batchSize := 500
-		objectIds := []bson.ObjectId{}
-		for _, id := range syncedDocumentIds[dependentCollection.Collection] {
-			objectIds = append(objectIds, id)
-			if len(objectIds) >= batchSize {
+	if len(description.ForeignKey) > 0 {
+		if dependentCollection != nil && len(syncedDocumentIds[dependentCollection.Collection]) > 0 {
+			fmt.Printf("Extracting data from collection %s using key %s related to %s\n", description.Collection, description.ForeignKey, dependentCollection.Collection)
+			for _, objectIds := range batchSlice(syncedDocumentIds[dependentCollection.Collection], 500) {
 				extractAndInsertDocuments(objectIds, description, sourceCol, destDb)
-				objectIds = []bson.ObjectId{}
 			}
 		}
-
-		if len(objectIds) > 0 {
-			extractAndInsertDocuments(objectIds, description, sourceCol, destDb)
+	} else if len(description.ReferenceKey) > 0 {
+		if dependentCollection != nil && len(syncedDocumentIds[dependentCollection.Collection]) > 0 {
+			fmt.Printf("Extracting data from collection %s using key %s referenced by %s\n", description.Collection, description.ReferenceKey, dependentCollection.Collection)
+			depCol := destDb.C(dependentCollection.Collection)
+			for _, referencedIds := range batchSlice(syncedDocumentIds[dependentCollection.Collection], 500) {
+				criteria := bson.M{"_id": bson.M{"$in": referencedIds}}
+				objectIds := []bson.ObjectId{}
+				err := depCol.Find(criteria).Distinct(description.ReferenceKey, &objectIds)
+				if err == nil && len(objectIds) > 0 {
+					extractAndInsertDocuments(objectIds, description, sourceCol, destDb)
+				}
+			}
 		}
-
 	} else {
 		fmt.Printf("Extracting data from collection %s\n", description.Collection)
 		extractAndInsertDocuments(nil, description, sourceCol, destDb)
-
 	}
-
 }
 
 func createDBConnection(uri *url.URL) (session *mgo.Session, db *mgo.Database) {
