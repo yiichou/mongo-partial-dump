@@ -43,7 +43,7 @@ func batchSlice(slice []bson.ObjectId, batchSize int) [][]bson.ObjectId {
 	return batches
 }
 
-func extractAndInsertDocuments(objectIds []bson.ObjectId, collectionDescription *collectionDescription, sourceCollection *mgo.Collection, destDb *mgo.Database) {
+func extractAndInsertDocuments(objectIds []bson.ObjectId, collectionDescription *collectionDescription, sourceCollection *mgo.Collection, destCollection *mgo.Collection) {
 	criteria := bson.M{}
 	if objectIds != nil && len(collectionDescription.ForeignKey) > 0 {
 		criteria = bson.M{collectionDescription.ForeignKey: bson.M{"$in": objectIds}}
@@ -56,28 +56,36 @@ func extractAndInsertDocuments(objectIds []bson.ObjectId, collectionDescription 
 	}
 
 	criteria = correctFilters(criteria)
-	fmt.Printf("Criteria %s\n", criteria)
+	// fmt.Printf("Criteria %s\n", criteria)
 
-	destCollection := destDb.C(collectionDescription.Collection)
 	destCollection.RemoveAll(criteria)
 
-	obj := bson.M{}
+	doc := bson.M{}
 	iter := sourceCollection.Find(criteria).Iter()
-	for iter.Next(&obj) {
-		destCollection.Insert(obj)
-		syncedDocumentIds[collectionDescription.Collection] = append(syncedDocumentIds[collectionDescription.Collection], obj["_id"].(bson.ObjectId))
-		fmt.Printf(".")
+	count := 0
+	for iter.Next(&doc) {
+		err := destCollection.Insert(doc)
+		if err != nil {
+			panic(err)
+		}
+		count++
+		syncedDocumentIds[collectionDescription.Collection] = append(syncedDocumentIds[collectionDescription.Collection], doc["_id"].(bson.ObjectId))
+
+		if count%100 == 1 {
+			fmt.Printf(".")
+		}
 	}
-	fmt.Printf("\n")
+	fmt.Printf("\nHas inserted %d %s\n", len(syncedDocumentIds[collectionDescription.Collection]), collectionDescription.Collection)
 }
 
 func extractData(description *collectionDescription, dependentCollection *collectionDescription, sourceDb *mgo.Database, destDb *mgo.Database) {
 	sourceCol := sourceDb.C(description.Collection)
+	destCol := destDb.C(description.Collection)
 	if len(description.ForeignKey) > 0 {
 		if dependentCollection != nil && len(syncedDocumentIds[dependentCollection.Collection]) > 0 {
 			fmt.Printf("Extracting data from collection %s using key %s related to %s\n", description.Collection, description.ForeignKey, dependentCollection.Collection)
 			for _, objectIds := range batchSlice(syncedDocumentIds[dependentCollection.Collection], 500) {
-				extractAndInsertDocuments(objectIds, description, sourceCol, destDb)
+				extractAndInsertDocuments(objectIds, description, sourceCol, destCol)
 			}
 		}
 	} else if len(description.ReferenceKey) > 0 {
@@ -89,13 +97,13 @@ func extractData(description *collectionDescription, dependentCollection *collec
 				objectIds := []bson.ObjectId{}
 				err := depCol.Find(criteria).Distinct(description.ReferenceKey, &objectIds)
 				if err == nil && len(objectIds) > 0 {
-					extractAndInsertDocuments(objectIds, description, sourceCol, destDb)
+					extractAndInsertDocuments(objectIds, description, sourceCol, destCol)
 				}
 			}
 		}
 	} else {
 		fmt.Printf("Extracting data from collection %s\n", description.Collection)
-		extractAndInsertDocuments(nil, description, sourceCol, destDb)
+		extractAndInsertDocuments(nil, description, sourceCol, destCol)
 	}
 }
 
@@ -148,6 +156,7 @@ func main() {
 		for {
 			if len(todo) == 0 {
 				doneCollectionCount += 1
+				fmt.Printf("Processed: %d/%d \n", doneCollectionCount, len(collections))
 				break
 			}
 
@@ -169,13 +178,13 @@ func main() {
 			doneCollections[item.Collection] = true
 			doneCollectionCount += 1
 
+			fmt.Printf("Processed: %d/%d \n", doneCollectionCount, len(collections))
+
 			if len(todo) == 0 {
 				break
 			}
 		}
 
-		fmt.Printf("doneCollectionCount %d\n", doneCollectionCount)
-		fmt.Printf("Size of collections %d\n", len(collections))
 		if doneCollectionCount == len(collections) {
 			break
 		}
